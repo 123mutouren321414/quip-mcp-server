@@ -7,12 +7,14 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { writeFile, rm } from 'node:fs/promises';
+import os from 'node:os';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -210,8 +212,8 @@ class QuipServer {
       console.log(`Reading document ${threadId}...`);
       
       // Execute the Python script to read the document
-      const command = `python -u ${path.join(SCRIPTS_DIR, 'quip_edit.py')} ${threadId} read`;
-      const { stdout, stderr } = await execAsync(command);
+      const script = path.join(SCRIPTS_DIR, 'quip_edit.py');
+      const { stdout, stderr } = await execFileAsync('python', ['-u', script, threadId, 'read'], { encoding: 'utf8' });
       
       if (stderr) {
         console.error(`Error reading document: ${stderr}`);
@@ -237,16 +239,19 @@ class QuipServer {
       console.log(`Editing document ${threadId} with operation ${operation}...`);
       
       // Create a temporary file to store the content
-      const tempFilePath = `/tmp/quip_content_${Date.now()}.md`;
-      const writeCommand = `echo "${content.replace(/"/g, '\\"')}" > ${tempFilePath}`;
-      await execAsync(writeCommand);
+      const tempFilePath = path.join(os.tmpdir(), `quip_content_${Date.now()}.md`);
+      await writeFile(tempFilePath, content, 'utf8');
       
       // Execute the Python script to edit the document
-      const command = `python -u ${path.join(SCRIPTS_DIR, 'quip_edit.py')} ${threadId} ${operation.toLowerCase()} ${tempFilePath}`;
-      const { stdout, stderr } = await execAsync(command);
+      const script = path.join(SCRIPTS_DIR, 'quip_edit.py');  
+      const { stdout, stderr } = await execFileAsync(  
+        'python',  
+        ['-u', script, threadId, operation.toLowerCase(), tempFilePath],  
+        { encoding: 'utf8' }  
+      );
       
       // Clean up the temporary file
-      await execAsync(`rm ${tempFilePath}`);
+      await rm(tempFilePath, { force: true });
       
       if (stderr) {
         console.error(`Error editing document: ${stderr}`);
